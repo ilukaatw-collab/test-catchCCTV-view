@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cesium CCTV 多邊形敷貼</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.116/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.116/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #000; }
+        #cesiumContainer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+        .cesium-viewer-bottom { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="cesiumContainer"></div>
+
+    <img id="mjpeg-stream" src="https://tcnvr8.taichung.gov.tw/d9216d9c" crossorigin="anonymous" style="display:none;">
+
+    <canvas id="video-canvas" width="640" height="480" style="display:none;"></canvas>
+
+    <script>
+        // 初始化 Cesium (使用國土測繪中心正射影像)
+        const viewer = new Cesium.Viewer('cesiumContainer', {
+            baseLayer: new Cesium.ImageryLayer(new Cesium.WebMapTileServiceImageryProvider({
+                url : 'https://wmts.nlsc.gov.tw/wmts',
+                layer : 'PHOTO2',
+                style : 'default',
+                format : 'image/png',
+                tileMatrixSetID : 'GoogleMapsCompatible',
+                maximumLevel: 19,
+                credit: '內政部國土測繪中心'
+            })),
+            baseLayerPicker: false,
+            geocoder: false,
+            homeButton: false,
+            infoBox: false,
+            navigationHelpButton: false,
+            sceneModePicker: false,
+            animation: false, 
+            timeline: false   
+        });
+
+        const img = document.getElementById('mjpeg-stream');
+        const canvas = document.getElementById('video-canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        // 建立一個無限循環，持續將即時影像畫上 Canvas
+        function renderFrame() {
+            if (img.complete && img.naturalHeight !== 0) {
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            }
+            requestAnimationFrame(renderFrame);
+        }
+        renderFrame(); 
+
+        // 建立多邊形並貼上影片
+        const cctvPolygon = viewer.entities.add({
+            polygon: {
+                // 將範圍縮小，大約對齊台中火車站前的建國路與臺灣大道路口
+                hierarchy: Cesium.Cartesian3.fromDegreesArray([
+                    120.6835, 24.1375, 
+                    120.6845, 24.1375,
+                    120.6845, 24.1365,
+                    120.6835, 24.1365
+                ]),
+                // 使用 CallbackProperty 強制 Cesium 每一幀都抓最新的 Canvas 畫面
+                material: new Cesium.ImageMaterialProperty({
+                    image: new Cesium.CallbackProperty(function() {
+                        return canvas;
+                    }, false),
+                    transparent: false
+                })
+            }
+        });
+
+        // 關鍵 3：讓視角自動「飛到」並聚焦在這個多邊形上方
+        // 這裡設定從上方往斜下看 (Pitch: -60度)，距離 400 公尺
+        viewer.flyTo(cctvPolygon, {
+            offset: new Cesium.HeadingPitchRange(
+                Cesium.Math.toRadians(0),   // Heading
+                Cesium.Math.toRadians(-60), // Pitch
+                400                         // Range (高度/距離)
+            )
+        });
+
+    </script>
+</body>
+</html>
