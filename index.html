@@ -2,213 +2,55 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cesium CCTV 視覺校正工具 (直立 3D 牆面版)</title>
+    <title>Cesium CCTV 姿態校正工具</title>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.116/Build/Cesium/Cesium.js"></script>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.116/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
-    
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #000; font-family: "Microsoft JhengHei", sans-serif; }
-        #cesiumContainer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
-        
-        #cctvOverlay {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none;
-            object-fit: cover;
-            opacity: 0.5;
-            z-index: 10;
-        }
-
-        .cesium-viewer-toolbar, .cesium-viewer-animationContainer, .cesium-viewer-timelineContainer, .cesium-viewer-bottom { display: none !important; }
-
-        #controlPanel {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            width: 320px;
-            background: rgba(30, 30, 30, 0.85);
-            backdrop-filter: blur(8px);
-            color: #ffffff;
-            padding: 20px;
-            border-radius: 12px;
-            border: 1px solid #555;
-            z-index: 9999;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-        }
-
-        #controlPanel h2 { margin-top: 0; font-size: 18px; color: #4dabf7; border-bottom: 1px solid #555; padding-bottom: 10px; }
-        
-        .slider-group { margin-bottom: 15px; }
-        .slider-group label { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px; color: #ccc; }
-        .slider-group input[type="range"] { width: 100%; cursor: pointer; }
-        
-        #btnExport {
-            width: 100%;
-            background-color: #228be6;
-            color: white;
-            border: none;
-            padding: 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 15px;
-            font-weight: bold;
-            margin-top: 10px;
-        }
-        #btnExport:hover { background-color: #1c7ed6; }
-        
-        #exportMsg { color: #51cf66; font-size: 13px; text-align: center; margin-top: 10px; display: none; }
+        body { margin: 0; padding: 0; height: 100vh; overflow: hidden; }
+        #cesiumContainer { width: 100%; height: 100%; }
+        #cctvOverlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0.5; z-index: 10; object-fit: cover; }
     </style>
 </head>
 <body>
-
     <div id="cesiumContainer"></div>
-
-    <img id="cctvOverlay" src="https://tcnvr8.taichung.gov.tw/d9216d9c" crossorigin="anonymous" alt="CCTV 畫面">
-
-    <div id="controlPanel">
-        <h2>攝影機姿態校正工具</h2>
-
-        <div class="slider-group">
-            <label>影像透明度 <span id="valOpacity">0.5</span></label>
-            <input type="range" id="sliderOpacity" min="0" max="1" step="0.05" value="0.5">
-        </div>
-
-        <div class="slider-group">
-            <label>高度 (Height) 公尺 <span id="valHeight">60</span></label>
-            <input type="range" id="sliderHeight" min="2" max="200" step="1" value="60">
-        </div>
-
-        <div class="slider-group">
-            <label>偏航角 (Heading) 度 <span id="valHeading">0</span></label>
-            <input type="range" id="sliderHeading" min="0" max="360" step="1" value="0">
-        </div>
-
-        <div class="slider-group">
-            <label>俯仰角 (Pitch) 度 <span id="valPitch">-15</span></label>
-            <input type="range" id="sliderPitch" min="-90" max="0" step="1" value="-15">
-        </div>
-
-        <div class="slider-group">
-            <label>視野範圍 (FOV) 度 <span id="valFov">60</span></label>
-            <input type="range" id="sliderFov" min="30" max="120" step="1" value="60">
-        </div>
-
-        <button id="btnExport">匯出直立 3D 對齊參數</button>
-        <p id="exportMsg">3D 直立座標已複製到剪貼簿！</p>
+    <img id="cctvOverlay" src="https://tcnvr8.taichung.gov.tw/d9216d9c" crossorigin="anonymous">
+    
+    <div class="absolute top-4 right-4 z-20 w-72 bg-black/70 text-white p-4 rounded-lg">
+        <h2 class="font-bold mb-2">校正控制面板</h2>
+        <label>高度 (Height): <span id="vHeight">60</span>m</label><input type="range" id="sHeight" min="5" max="200" value="60" class="w-full mb-2">
+        <label>偏航 (Heading): <span id="vHeading">0</span>°</label><input type="range" id="sHeading" min="0" max="360" value="0" class="w-full mb-2">
+        <label>俯仰 (Pitch): <span id="vPitch">-15</span>°</label><input type="range" id="sPitch" min="-90" max="0" value="-15" class="w-full mb-2">
+        <label>視角 (FOV): <span id="vFov">60</span>°</label><input type="range" id="sFov" min="30" max="120" value="60" class="w-full mb-2">
+        <button id="btnExport" class="w-full bg-blue-600 mt-3 py-2 rounded">匯出 JSON 參數</button>
     </div>
 
     <script>
-        const viewer = new Cesium.Viewer('cesiumContainer', {
-            baseLayer: new Cesium.ImageryLayer(new Cesium.WebMapTileServiceImageryProvider({
-                url : 'https://wmts.nlsc.gov.tw/wmts',
-                layer : 'PHOTO2',
-                style : 'default',
-                format : 'image/png',
-                tileMatrixSetID : 'GoogleMapsCompatible',
-                maximumLevel: 19,
-                credit: '內政部國土測繪中心'
-            })),
-            baseLayerPicker: false,
-            geocoder: false,
-            homeButton: false,
-            infoBox: false,
-            navigationHelpButton: false,
-            sceneModePicker: false,
-            animation: false, 
-            timeline: false   
-        });
+        const viewer = new Cesium.Viewer('cesiumContainer');
+        const state = { height: 60, heading: 0, pitch: -15, fov: 60 };
 
-        // 初始視角
-        viewer.camera.setView({
-            destination: Cesium.Cartesian3.fromDegrees(120.684, 24.137, 60),
-            orientation: { heading: 0, pitch: Cesium.Math.toRadians(-15), roll: 0 }
-        });
-
-        // 修正後的相機更新邏輯：只更新旋轉與高度，保留經緯度
-        function updateCamera() {
-            const currentCarto = viewer.camera.positionCartographic;
-            const newHeight = parseFloat(document.getElementById('sliderHeight').value);
-            const newHeading = Cesium.Math.toRadians(parseFloat(document.getElementById('sliderHeading').value));
-            const newPitch = Cesium.Math.toRadians(parseFloat(document.getElementById('sliderPitch').value));
-            const newFov = Cesium.Math.toRadians(parseFloat(document.getElementById('sliderFov').value));
-
+        function update() {
             viewer.camera.setView({
-                destination: Cesium.Cartesian3.fromDegrees(
-                    Cesium.Math.toDegrees(currentCarto.longitude), 
-                    Cesium.Math.toDegrees(currentCarto.latitude), 
-                    newHeight
-                ),
-                orientation: {
-                    heading: newHeading,
-                    pitch: newPitch,
-                    roll: 0.0
-                }
+                destination: Cesium.Cartesian3.fromDegrees(120.684, 24.137, state.height),
+                orientation: { heading: Cesium.Math.toRadians(state.heading), pitch: Cesium.Math.toRadians(state.pitch) }
             });
-            viewer.camera.frustum.fov = newFov;
+            viewer.camera.frustum.fov = Cesium.Math.toRadians(state.fov);
         }
 
-        function bindSlider(sliderId, valId, callback) {
-            const slider = document.getElementById(sliderId);
-            const valDisplay = document.getElementById(valId);
-            slider.addEventListener('input', (e) => {
-                valDisplay.textContent = e.target.value;
-                if (callback) callback();
-            });
-        }
-
-        bindSlider('sliderOpacity', 'valOpacity', () => {
-            document.getElementById('cctvOverlay').style.opacity = document.getElementById('sliderOpacity').value;
-        });
-
-        bindSlider('sliderHeight', 'valHeight', updateCamera);
-        bindSlider('sliderHeading', 'valHeading', updateCamera);
-        bindSlider('sliderPitch', 'valPitch', updateCamera);
-        bindSlider('sliderFov', 'valFov', updateCamera);
-
-        document.getElementById('btnExport').addEventListener('click', () => {
-            const canvas = viewer.canvas;
-            const w = canvas.clientWidth;
-            const h = canvas.clientHeight;
-            const aspect = w / h;
-
-            function getGroundPosition(x, y) {
-                const pixel = new Cesium.Cartesian2(x, y);
-                const position = viewer.camera.pickEllipsoid(pixel, viewer.scene.globe.ellipsoid);
-                if (position) {
-                    const carto = Cesium.Cartographic.fromCartesian(position);
-                    return { cartesian: position, lon: Cesium.Math.toDegrees(carto.longitude), lat: Cesium.Math.toDegrees(carto.latitude) };
-                }
-                return null;
-            }
-
-            const bl = getGroundPosition(0, h);
-            const br = getGroundPosition(w, h);
-
-            if (!bl || !br) {
-                alert("無法計算地表座標！請將攝影機視角（Pitch）往下調。");
-                return;
-            }
-
-            const distanceMeters = Cesium.Cartesian3.distance(bl.cartesian, br.cartesian);
-            const wallHeight = distanceMeters / aspect;
-
-            const exportData = {
-                polygonCoordsHeights: [
-                    Number(bl.lon.toFixed(6)), Number(bl.lat.toFixed(6)), Number(wallHeight.toFixed(2)),
-                    Number(br.lon.toFixed(6)), Number(br.lat.toFixed(6)), Number(wallHeight.toFixed(2)),
-                    Number(br.lon.toFixed(6)), Number(br.lat.toFixed(6)), 0,
-                    Number(bl.lon.toFixed(6)), Number(bl.lat.toFixed(6)), 0
-                ]
+        ['Height', 'Heading', 'Pitch', 'Fov'].forEach(k => {
+            document.getElementById('s'+k).oninput = (e) => {
+                state[k.toLowerCase()] = parseFloat(e.target.value);
+                document.getElementById('v'+k).textContent = e.target.value;
+                update();
             };
-
-            const config = JSON.stringify(exportData, null, 4);
-            navigator.clipboard.writeText(config).then(() => {
-                const msg = document.getElementById('exportMsg');
-                msg.style.display = 'block';
-                setTimeout(() => msg.style.display = 'none', 3000);
-            });
         });
+
+        document.getElementById('btnExport').onclick = () => {
+            const data = JSON.stringify(state, null, 2);
+            navigator.clipboard.writeText(data);
+            alert("參數已複製到剪貼簿：\n" + data);
+        };
+        update();
     </script>
 </body>
 </html>
