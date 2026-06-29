@@ -58,6 +58,23 @@
         #btnExport:hover { background-color: #1c7ed6; }
         
         #exportMsg { color: #51cf66; font-size: 13px; text-align: center; margin-top: 10px; display: none; }
+
+        /* 顯示 JSON 結果的文字框 */
+        #exportResult {
+            width: 100%;
+            height: 120px;
+            background: #111;
+            color: #51cf66;
+            border: 1px solid #555;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-size: 11px;
+            padding: 8px;
+            display: none;
+            resize: none;
+            box-sizing: border-box;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
@@ -96,6 +113,9 @@
 
         <button id="btnExport">匯出直立 3D 對齊參數</button>
         <p id="exportMsg">3D 直立座標已複製到剪貼簿！</p>
+        
+        <!-- 提供使用者手動複製的備用文字框 -->
+        <textarea id="exportResult" readonly></textarea>
     </div>
 
     <script>
@@ -171,6 +191,13 @@
             const w = canvas.clientWidth;
             const h = canvas.clientHeight;
             const aspect = w / h;
+            const msg = document.getElementById('exportMsg');
+            const textArea = document.getElementById('exportResult');
+            
+            // 重置訊息狀態
+            msg.style.display = 'none';
+            msg.style.color = '#51cf66';
+            textArea.style.display = 'none';
 
             function getGroundPosition(x, y) {
                 const pixel = new Cesium.Cartesian2(x, y);
@@ -186,7 +213,9 @@
             const br = getGroundPosition(w, h);
 
             if (!bl || !br) {
-                alert("無法計算地表座標！請將攝影機視角（Pitch）往下調。");
+                msg.textContent = "⚠️ 無法計算座標！請將俯仰角（Pitch）往下調。";
+                msg.style.color = "#ff6b6b";
+                msg.style.display = 'block';
                 return;
             }
 
@@ -201,31 +230,38 @@
                     Number(bl.lon.toFixed(6)), Number(bl.lat.toFixed(6)), 0
                 ],
                 cameraState: {
-                    lon: camState.lon,
-                    lat: camState.lat,
-                    height: camState.height,
-                    heading: camState.heading,
-                    pitch: camState.pitch,
-                    fov: camState.fov
+                    lon: Number(Cesium.Math.toDegrees(viewer.camera.positionCartographic.longitude).toFixed(6)),
+                    lat: Number(Cesium.Math.toDegrees(viewer.camera.positionCartographic.latitude).toFixed(6)),
+                    height: parseFloat(document.getElementById('sliderHeight').value),
+                    heading: parseFloat(document.getElementById('sliderHeading').value),
+                    pitch: parseFloat(document.getElementById('sliderPitch').value),
+                    fov: parseFloat(document.getElementById('sliderFov').value)
                 }
             };
 
             const config = JSON.stringify(exportData, null, 4);
             console.log("導出的直立多邊形對齊參數:", config);
             
-            // 修正：加入防呆與本地環境 (file:///) 的剪貼簿相容處理
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(config).then(() => {
-                    const msg = document.getElementById('exportMsg');
+            // 顯示文字框讓使用者也能手動複製
+            textArea.value = config;
+            textArea.style.display = 'block';
+            
+            // 嘗試使用相容性較高的 document.execCommand 進行自動複製
+            textArea.select();
+            textArea.setSelectionRange(0, 99999); // 給行動裝置的相容
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    msg.textContent = '✅ 參數已複製！(亦可從下方框內複製)';
                     msg.style.display = 'block';
-                    setTimeout(() => msg.style.display = 'none', 3000);
-                }).catch(err => {
-                    // 如果被瀏覽器阻擋，跳出視窗讓使用者手動複製
-                    prompt("瀏覽器阻擋自動複製，請手動複製以下 JSON 參數：", config);
-                });
-            } else {
-                // 如果是 file:/// 開啟，根本沒有 clipboard API，直接跳出視窗
-                prompt("本地環境限制自動複製，請手動複製以下 JSON 參數：", config);
+                } else {
+                    throw new Error('Copy failed');
+                }
+            } catch (err) {
+                msg.textContent = '⚠️ 自動複製被阻擋，請手動複製下方文字。';
+                msg.style.color = '#ffa94d';
+                msg.style.display = 'block';
             }
         });
     </script>
