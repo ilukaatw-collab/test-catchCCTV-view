@@ -3,84 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cesium CCTV 視覺校正工具 (多邊形支援版)</title>
-    <!-- 引入 CesiumJS -->
+    <title>Cesium CCTV 視覺校正工具 (防呆保證版)</title>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.116/Build/Cesium/Cesium.js"></script>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.116/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
-    <!-- 引入 Tailwind CSS 進行快速 UI 開發 -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #000; }
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #000; font-family: "Microsoft JhengHei", sans-serif; }
         #cesiumContainer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
-        /* 模擬的半透明 CCTV 影像疊加層 */
+        
+        /* 半透明影像疊加層 */
         #cctvOverlay {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; /* 讓滑鼠可以穿透影像操作後方的 Cesium */
+            pointer-events: none; /* 滑鼠穿透 */
             object-fit: cover;
-            opacity: 0.5; /* 預設半透明，方便對位 */
+            opacity: 0.5;
             z-index: 10;
         }
-        /* 隱藏 Cesium 預設 UI 以保持畫面乾淨 */
+
+        /* 隱藏 Cesium 預設 UI */
         .cesium-viewer-toolbar, .cesium-viewer-animationContainer, .cesium-viewer-timelineContainer, .cesium-viewer-bottom { display: none !important; }
+
+        /* 原生 CSS 寫死的控制面板，保證絕對顯示！ */
+        #controlPanel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            background: rgba(30, 30, 30, 0.85);
+            backdrop-filter: blur(8px);
+            color: #ffffff;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #555;
+            z-index: 9999;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+
+        #controlPanel h2 { margin-top: 0; font-size: 18px; color: #4dabf7; border-bottom: 1px solid #555; padding-bottom: 10px; }
+        
+        .slider-group { margin-bottom: 15px; }
+        .slider-group label { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px; color: #ccc; }
+        .slider-group input[type="range"] { width: 100%; cursor: pointer; }
+        
+        #btnExport {
+            width: 100%;
+            background-color: #228be6;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        #btnExport:hover { background-color: #1c7ed6; }
+        
+        #exportMsg { color: #51cf66; font-size: 13px; text-align: center; margin-top: 10px; display: none; }
     </style>
 </head>
 <body>
 
-    <!-- Cesium 3D 畫布 -->
     <div id="cesiumContainer"></div>
 
-    <!-- 半透明的 CCTV 影像疊加層 (此處使用預設佔位圖，實務上請替換為台中的 MJPEG 串流) -->
-    <img id="cctvOverlay" src="https://tcnvr8.taichung.gov.tw/d9216d9c" alt="CCTV 模擬畫面">
+    <img id="cctvOverlay" src="https://tcnvr8.taichung.gov.tw/d9216d9c" crossorigin="anonymous" alt="CCTV 畫面">
 
-    <!-- 視覺校正控制面板 -->
-    <div class="absolute top-4 right-4 z-20 w-80 bg-gray-900/80 backdrop-blur-md text-white p-5 rounded-xl shadow-2xl border border-gray-700">
-        <h2 class="text-lg font-bold mb-4 flex items-center">
-            <svg class="w-5 h-5 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-            攝影機姿態校正
-        </h2>
+    <div id="controlPanel">
+        <h2>攝影機姿態校正工具</h2>
 
-        <!-- 影像透明度控制 -->
-        <div class="mb-4">
-            <div class="flex justify-between text-sm mb-1"><label>影像透明度</label><span id="valOpacity">0.5</span></div>
-            <input type="range" id="sliderOpacity" min="0" max="1" step="0.05" value="0.5" class="w-full accent-blue-500">
+        <div class="slider-group">
+            <label>影像透明度 <span id="valOpacity">0.5</span></label>
+            <input type="range" id="sliderOpacity" min="0" max="1" step="0.05" value="0.5">
         </div>
 
-        <hr class="border-gray-600 my-4">
-
-        <!-- 相機高度 (Height) -->
-        <div class="mb-3">
-            <div class="flex justify-between text-sm mb-1"><label>高度 (Height) 公尺</label><span id="valHeight">60</span></div>
-            <input type="range" id="sliderHeight" min="2" max="200" step="1" value="60" class="w-full accent-green-500">
+        <div class="slider-group">
+            <label>高度 (Height) 公尺 <span id="valHeight">60</span></label>
+            <input type="range" id="sliderHeight" min="2" max="200" step="1" value="60">
         </div>
 
-        <!-- 偏航角 (Heading) -->
-        <div class="mb-3">
-            <div class="flex justify-between text-sm mb-1"><label>偏航角 (Heading) 度</label><span id="valHeading">0</span></div>
-            <input type="range" id="sliderHeading" min="0" max="360" step="1" value="0" class="w-full accent-green-500">
+        <div class="slider-group">
+            <label>偏航角 (Heading) 度 <span id="valHeading">0</span></label>
+            <input type="range" id="sliderHeading" min="0" max="360" step="1" value="0">
         </div>
 
-        <!-- 俯仰角 (Pitch) -->
-        <div class="mb-3">
-            <div class="flex justify-between text-sm mb-1"><label>俯仰角 (Pitch) 度</label><span id="valPitch">-15</span></div>
-            <input type="range" id="sliderPitch" min="-90" max="0" step="1" value="-15" class="w-full accent-green-500">
+        <div class="slider-group">
+            <label>俯仰角 (Pitch) 度 <span id="valPitch">-15</span></label>
+            <input type="range" id="sliderPitch" min="-90" max="0" step="1" value="-15">
         </div>
 
-        <!-- 視野角 (FOV) -->
-        <div class="mb-4">
-            <div class="flex justify-between text-sm mb-1"><label>視野範圍 (FOV) 度</label><span id="valFov">60</span></div>
-            <input type="range" id="sliderFov" min="30" max="120" step="1" value="60" class="w-full accent-purple-500">
+        <div class="slider-group">
+            <label>視野範圍 (FOV) 度 <span id="valFov">60</span></label>
+            <input type="range" id="sliderFov" min="30" max="120" step="1" value="60">
         </div>
 
-        <!-- 匯出按鈕 -->
-        <button id="btnExport" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 rounded transition-colors">
-            匯出多邊形對齊參數 (JSON)
-        </button>
-        <p id="exportMsg" class="text-xs text-green-400 mt-2 text-center hidden">多邊形座標已複製到剪貼簿！</p>
+        <button id="btnExport">匯出多邊形對齊參數 (JSON)</button>
+        <p id="exportMsg">多邊形座標已複製到剪貼簿！</p>
     </div>
 
     <script>
-        // 初始化 Cesium 基礎環境
         const viewer = new Cesium.Viewer('cesiumContainer', {
             // 使用國土測繪中心正射影像 WMTS 服務
             baseLayer: new Cesium.ImageryLayer(new Cesium.WebMapTileServiceImageryProvider({
@@ -102,7 +123,7 @@
             timeline: false   
         });
 
-        // 預設攝影機座標 (以台中火車站周邊為例)
+        // 預設攝影機座標 (台中火車站周邊)
         let camState = {
             lon: 120.684,
             lat: 24.137,
@@ -112,7 +133,6 @@
             fov: parseFloat(document.getElementById('sliderFov').value)
         };
 
-        // 更新 Cesium 攝影機視角函數
         function updateCamera() {
             viewer.camera.setView({
                 destination: Cesium.Cartesian3.fromDegrees(camState.lon, camState.lat, camState.height),
@@ -122,11 +142,9 @@
                     roll: 0.0
                 }
             });
-            // 更新 FOV
             viewer.camera.frustum.fov = Cesium.Math.toRadians(camState.fov);
         }
 
-        // 綁定 UI 滑桿事件
         function bindSlider(sliderId, valId, stateKey, callback) {
             const slider = document.getElementById(sliderId);
             const valDisplay = document.getElementById(valId);
@@ -138,30 +156,24 @@
             });
         }
 
-        // 綁定透明度控制
         bindSlider('sliderOpacity', 'valOpacity', 'opacity', (val) => {
             document.getElementById('cctvOverlay').style.opacity = val;
         });
 
-        // 綁定攝影機姿態控制
         bindSlider('sliderHeight', 'valHeight', 'height', updateCamera);
         bindSlider('sliderHeading', 'valHeading', 'heading', updateCamera);
         bindSlider('sliderPitch', 'valPitch', 'pitch', updateCamera);
         bindSlider('sliderFov', 'valFov', 'fov', updateCamera);
 
-        // 初始設定視角
         updateCamera();
 
-        // 🌟 修改後的匯出 JSON 功能 (將視角轉換為 4 個角落的多邊形座標)
         document.getElementById('btnExport').addEventListener('click', () => {
             const canvas = viewer.canvas;
             const w = canvas.clientWidth;
             const h = canvas.clientHeight;
 
-            // 取得畫面特定像素對應的地球表面經緯度
             function getGroundPosition(x, y) {
                 const pixel = new Cesium.Cartesian2(x, y);
-                // 透過射線拾取地球橢球體表面
                 const position = viewer.camera.pickEllipsoid(pixel, viewer.scene.globe.ellipsoid);
                 if (position) {
                     const carto = Cesium.Cartographic.fromCartesian(position);
@@ -173,45 +185,37 @@
                 return null;
             }
 
-            // 取得畫面四個角落的座標 (左上、右上、右下、左下)
             const tl = getGroundPosition(0, 0);
             const tr = getGroundPosition(w, 0);
             const br = getGroundPosition(w, h);
             const bl = getGroundPosition(0, h);
 
-            // 防呆設計：如果攝影機看太平，射線飛進太空中就抓不到地表座標
             if (!tl || !tr || !br || !bl) {
-                alert("無法計算多邊形座標！\n請將攝影機視角（Pitch）稍微往下調，確保半透明畫面的「四個角落」都有碰到地表。");
+                alert("無法計算多邊形座標！\n請將攝影機視角（Pitch）稍微往下調，確保畫面的「四個角落」都有碰到地表（不要照到太空中）。");
                 return;
             }
 
-            // 組合符合 Canvas 文件所需的 JSON 結構
             const exportData = {
-                // 這是您可以直接貼到 CCTV_多邊形動態敷貼.html 裡的 hierarchy 陣列
                 polygonCoords: [
                     Number(tl.lon.toFixed(6)), Number(tl.lat.toFixed(6)),
                     Number(tr.lon.toFixed(6)), Number(tr.lat.toFixed(6)),
                     Number(br.lon.toFixed(6)), Number(br.lat.toFixed(6)),
                     Number(bl.lon.toFixed(6)), Number(bl.lat.toFixed(6))
                 ],
-                // 這是建議 Canvas 使用的飛行動畫視角
                 flyToOffset: {
                     heading: camState.heading,
                     pitch: -60,
                     range: 400
-                },
-                // 保留原始相機參數備查
-                originalCamera: camState
+                }
             };
 
             const config = JSON.stringify(exportData, null, 4);
             console.log("導出的多邊形對齊參數:", config);
             
-            // 複製到剪貼簿
             navigator.clipboard.writeText(config).then(() => {
                 const msg = document.getElementById('exportMsg');
-                msg.classList.remove('hidden');
-                setTimeout(() => msg.classList.add('hidden'), 3000);
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
             }).catch(err => {
                 alert("匯出參數如下:\n" + config);
             });
