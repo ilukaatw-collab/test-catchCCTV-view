@@ -199,7 +199,15 @@
                     Number(br.lon.toFixed(6)), Number(br.lat.toFixed(6)), Number(wallHeight.toFixed(2)),
                     Number(br.lon.toFixed(6)), Number(br.lat.toFixed(6)), 0,
                     Number(bl.lon.toFixed(6)), Number(bl.lat.toFixed(6)), 0
-                ]
+                ],
+                cameraState: {
+                    lon: camState.lon,
+                    lat: camState.lat,
+                    height: camState.height,
+                    heading: camState.heading,
+                    pitch: camState.pitch,
+                    fov: camState.fov
+                }
             };
 
             const config = JSON.stringify(exportData, null, 4);
