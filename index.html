@@ -211,11 +211,22 @@
             };
 
             const config = JSON.stringify(exportData, null, 4);
-            navigator.clipboard.writeText(config).then(() => {
-                const msg = document.getElementById('exportMsg');
-                msg.style.display = 'block';
-                setTimeout(() => msg.style.display = 'none', 3000);
-            });
+            console.log("導出的直立多邊形對齊參數:", config);
+            
+            // 修正：加入防呆與本地環境 (file:///) 的剪貼簿相容處理
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(config).then(() => {
+                    const msg = document.getElementById('exportMsg');
+                    msg.style.display = 'block';
+                    setTimeout(() => msg.style.display = 'none', 3000);
+                }).catch(err => {
+                    // 如果被瀏覽器阻擋，跳出視窗讓使用者手動複製
+                    prompt("瀏覽器阻擋自動複製，請手動複製以下 JSON 參數：", config);
+                });
+            } else {
+                // 如果是 file:/// 開啟，根本沒有 clipboard API，直接跳出視窗
+                prompt("本地環境限制自動複製，請手動複製以下 JSON 參數：", config);
+            }
         });
     </script>
 </body>
