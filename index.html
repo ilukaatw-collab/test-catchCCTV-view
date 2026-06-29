@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cesium CCTV 視覺校正工具 (防呆保證版)</title>
+    <title>Cesium CCTV 視覺校正工具 (直立 3D 牆面版)</title>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.116/Build/Cesium/Cesium.js"></script>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.116/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     
@@ -11,20 +11,17 @@
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #000; font-family: "Microsoft JhengHei", sans-serif; }
         #cesiumContainer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
         
-        /* 半透明影像疊加層 */
         #cctvOverlay {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; /* 滑鼠穿透 */
+            pointer-events: none;
             object-fit: cover;
             opacity: 0.5;
             z-index: 10;
         }
 
-        /* 隱藏 Cesium 預設 UI */
         .cesium-viewer-toolbar, .cesium-viewer-animationContainer, .cesium-viewer-timelineContainer, .cesium-viewer-bottom { display: none !important; }
 
-        /* 原生 CSS 寫死的控制面板，保證絕對顯示！ */
         #controlPanel {
             position: absolute;
             top: 20px;
@@ -97,13 +94,12 @@
             <input type="range" id="sliderFov" min="30" max="120" step="1" value="60">
         </div>
 
-        <button id="btnExport">匯出多邊形對齊參數 (JSON)</button>
-        <p id="exportMsg">多邊形座標已複製到剪貼簿！</p>
+        <button id="btnExport">匯出直立 3D 對齊參數</button>
+        <p id="exportMsg">3D 直立座標已複製到剪貼簿！</p>
     </div>
 
     <script>
         const viewer = new Cesium.Viewer('cesiumContainer', {
-            // 使用國土測繪中心正射影像 WMTS 服務
             baseLayer: new Cesium.ImageryLayer(new Cesium.WebMapTileServiceImageryProvider({
                 url : 'https://wmts.nlsc.gov.tw/wmts',
                 layer : 'PHOTO2',
@@ -123,101 +119,94 @@
             timeline: false   
         });
 
-        // 預設攝影機座標 (台中火車站周邊)
-        let camState = {
-            lon: 120.684,
-            lat: 24.137,
-            height: parseFloat(document.getElementById('sliderHeight').value),
-            heading: parseFloat(document.getElementById('sliderHeading').value),
-            pitch: parseFloat(document.getElementById('sliderPitch').value),
-            fov: parseFloat(document.getElementById('sliderFov').value)
-        };
+        // 初始視角
+        viewer.camera.setView({
+            destination: Cesium.Cartesian3.fromDegrees(120.684, 24.137, 60),
+            orientation: { heading: 0, pitch: Cesium.Math.toRadians(-15), roll: 0 }
+        });
 
+        // 修正後的相機更新邏輯：只更新旋轉與高度，保留經緯度
         function updateCamera() {
+            const currentCarto = viewer.camera.positionCartographic;
+            const newHeight = parseFloat(document.getElementById('sliderHeight').value);
+            const newHeading = Cesium.Math.toRadians(parseFloat(document.getElementById('sliderHeading').value));
+            const newPitch = Cesium.Math.toRadians(parseFloat(document.getElementById('sliderPitch').value));
+            const newFov = Cesium.Math.toRadians(parseFloat(document.getElementById('sliderFov').value));
+
             viewer.camera.setView({
-                destination: Cesium.Cartesian3.fromDegrees(camState.lon, camState.lat, camState.height),
+                destination: Cesium.Cartesian3.fromDegrees(
+                    Cesium.Math.toDegrees(currentCarto.longitude), 
+                    Cesium.Math.toDegrees(currentCarto.latitude), 
+                    newHeight
+                ),
                 orientation: {
-                    heading: Cesium.Math.toRadians(camState.heading),
-                    pitch: Cesium.Math.toRadians(camState.pitch),
+                    heading: newHeading,
+                    pitch: newPitch,
                     roll: 0.0
                 }
             });
-            viewer.camera.frustum.fov = Cesium.Math.toRadians(camState.fov);
+            viewer.camera.frustum.fov = newFov;
         }
 
-        function bindSlider(sliderId, valId, stateKey, callback) {
+        function bindSlider(sliderId, valId, callback) {
             const slider = document.getElementById(sliderId);
             const valDisplay = document.getElementById(valId);
             slider.addEventListener('input', (e) => {
-                const val = e.target.value;
-                valDisplay.textContent = val;
-                camState[stateKey] = parseFloat(val);
-                if (callback) callback(val);
+                valDisplay.textContent = e.target.value;
+                if (callback) callback();
             });
         }
 
-        bindSlider('sliderOpacity', 'valOpacity', 'opacity', (val) => {
-            document.getElementById('cctvOverlay').style.opacity = val;
+        bindSlider('sliderOpacity', 'valOpacity', () => {
+            document.getElementById('cctvOverlay').style.opacity = document.getElementById('sliderOpacity').value;
         });
 
-        bindSlider('sliderHeight', 'valHeight', 'height', updateCamera);
-        bindSlider('sliderHeading', 'valHeading', 'heading', updateCamera);
-        bindSlider('sliderPitch', 'valPitch', 'pitch', updateCamera);
-        bindSlider('sliderFov', 'valFov', 'fov', updateCamera);
-
-        updateCamera();
+        bindSlider('sliderHeight', 'valHeight', updateCamera);
+        bindSlider('sliderHeading', 'valHeading', updateCamera);
+        bindSlider('sliderPitch', 'valPitch', updateCamera);
+        bindSlider('sliderFov', 'valFov', updateCamera);
 
         document.getElementById('btnExport').addEventListener('click', () => {
             const canvas = viewer.canvas;
             const w = canvas.clientWidth;
             const h = canvas.clientHeight;
+            const aspect = w / h;
 
             function getGroundPosition(x, y) {
                 const pixel = new Cesium.Cartesian2(x, y);
                 const position = viewer.camera.pickEllipsoid(pixel, viewer.scene.globe.ellipsoid);
                 if (position) {
                     const carto = Cesium.Cartographic.fromCartesian(position);
-                    return {
-                        lon: Cesium.Math.toDegrees(carto.longitude),
-                        lat: Cesium.Math.toDegrees(carto.latitude)
-                    };
+                    return { cartesian: position, lon: Cesium.Math.toDegrees(carto.longitude), lat: Cesium.Math.toDegrees(carto.latitude) };
                 }
                 return null;
             }
 
-            const tl = getGroundPosition(0, 0);
-            const tr = getGroundPosition(w, 0);
-            const br = getGroundPosition(w, h);
             const bl = getGroundPosition(0, h);
+            const br = getGroundPosition(w, h);
 
-            if (!tl || !tr || !br || !bl) {
-                alert("無法計算多邊形座標！\n請將攝影機視角（Pitch）稍微往下調，確保畫面的「四個角落」都有碰到地表（不要照到太空中）。");
+            if (!bl || !br) {
+                alert("無法計算地表座標！請將攝影機視角（Pitch）往下調。");
                 return;
             }
 
+            const distanceMeters = Cesium.Cartesian3.distance(bl.cartesian, br.cartesian);
+            const wallHeight = distanceMeters / aspect;
+
             const exportData = {
-                polygonCoords: [
-                    Number(tl.lon.toFixed(6)), Number(tl.lat.toFixed(6)),
-                    Number(tr.lon.toFixed(6)), Number(tr.lat.toFixed(6)),
-                    Number(br.lon.toFixed(6)), Number(br.lat.toFixed(6)),
-                    Number(bl.lon.toFixed(6)), Number(bl.lat.toFixed(6))
-                ],
-                flyToOffset: {
-                    heading: camState.heading,
-                    pitch: -60,
-                    range: 400
-                }
+                polygonCoordsHeights: [
+                    Number(bl.lon.toFixed(6)), Number(bl.lat.toFixed(6)), Number(wallHeight.toFixed(2)),
+                    Number(br.lon.toFixed(6)), Number(br.lat.toFixed(6)), Number(wallHeight.toFixed(2)),
+                    Number(br.lon.toFixed(6)), Number(br.lat.toFixed(6)), 0,
+                    Number(bl.lon.toFixed(6)), Number(bl.lat.toFixed(6)), 0
+                ]
             };
 
             const config = JSON.stringify(exportData, null, 4);
-            console.log("導出的多邊形對齊參數:", config);
-            
             navigator.clipboard.writeText(config).then(() => {
                 const msg = document.getElementById('exportMsg');
                 msg.style.display = 'block';
                 setTimeout(() => msg.style.display = 'none', 3000);
-            }).catch(err => {
-                alert("匯出參數如下:\n" + config);
             });
         });
     </script>
